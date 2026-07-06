@@ -83,7 +83,7 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
 }
 
 function getCachedTokens(tokens) {
-  return tokens?.cached_tokens || tokens?.cache_read_input_tokens || 0;
+  return tokens?.cached_tokens || tokens?.cache_read_input_tokens || tokens?.prompt_tokens_details?.cached_tokens || 0;
 }
 
 function getCacheCreationTokens(tokens) {

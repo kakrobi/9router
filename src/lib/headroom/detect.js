@@ -96,7 +96,23 @@ export async function getHeadroomStatus(url) {
   const path = findHeadroomBinary();
   const python = findPython310();
   const installed = Boolean(path);
-  const running = await probeProxyRunning(url);
+  
+  let latencyMs = null;
+  let running = false;
+  if (url) {
+    const base = String(url).replace(/\/$/, "");
+    const startTime = Date.now();
+    try {
+      const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) });
+      if (res.ok) {
+        running = true;
+        latencyMs = Date.now() - startTime;
+      }
+    } catch {
+      running = false;
+    }
+  }
+  
   const localUrl = isLoopbackHeadroomUrl(url);
-  return { installed, path, running, python, localUrl, canStart: installed && localUrl };
+  return { installed, path, running, python, localUrl, canStart: installed && localUrl, latencyMs };
 }
