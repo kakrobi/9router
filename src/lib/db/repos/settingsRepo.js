@@ -42,6 +42,8 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  githubUsername: "kakrobi",
+  githubToken: "",
 };
 
 async function readRaw() {

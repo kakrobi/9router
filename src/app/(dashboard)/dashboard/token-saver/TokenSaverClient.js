@@ -49,6 +49,16 @@ export default function TokenSaverClient() {
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [locale, setLocale] = useState("en");
 
+  // GitHub Auto-Update States
+  const [githubUsername, setGithubUsername] = useState("kakrobi");
+  const [githubToken, setGithubToken] = useState("");
+  const [hasUpdate, setHasUpdate] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updateStep, setUpdateStep] = useState("idle"); // "idle", "syncing", "building", "apply_ready", "applying", "complete", "failed"
+  const [updateError, setUpdateError] = useState("");
+  const [buildStatus, setBuildStatus] = useState(null);
+  const [buildTime, setBuildTime] = useState(0);
+
   // Dashboard Stats States
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -192,6 +202,110 @@ export default function TokenSaverClient() {
     setTimeout(fetchStats, 500);
   };
 
+  // Trigger update flow
+  const handleStartUpdate = async () => {
+    setUpdateModalOpen(true);
+    setUpdateStep("syncing");
+    setUpdateError("");
+    setBuildStatus(null);
+    setBuildTime(0);
+
+    try {
+      const res = await fetch("/api/token-saver/update/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal melakukan sinkronisasi dengan GitHub.");
+      }
+      setUpdateStep("building");
+    } catch (e) {
+      setUpdateStep("failed");
+      setUpdateError(e.message);
+    }
+  };
+
+  // Poll for GitHub Actions build status
+  useEffect(() => {
+    if (updateStep !== "building") return;
+
+    let timer;
+    let secondsCounter;
+    
+    secondsCounter = setInterval(() => {
+      setBuildTime((t) => t + 1);
+    }, 1000);
+
+    const checkBuildStatus = async () => {
+      try {
+        const res = await fetch("/api/token-saver/update/status");
+        if (res.ok) {
+          const data = await res.json();
+          setBuildStatus(data);
+
+          if (data.status === "completed") {
+            clearInterval(secondsCounter);
+            if (data.conclusion === "success") {
+              setUpdateStep("apply_ready");
+            } else {
+              setUpdateStep("failed");
+              setUpdateError("GitHub Actions build failed. Silakan periksa log workflow di repositori Anda.");
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Gagal memeriksa status build:", e);
+      }
+    };
+
+    checkBuildStatus();
+    timer = setInterval(checkBuildStatus, 6000);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(secondsCounter);
+    };
+  }, [updateStep]);
+
+  // Apply update via Watchtower
+  const handleApplyUpdate = async () => {
+    setUpdateStep("applying");
+    setUpdateError("");
+
+    try {
+      const res = await fetch("/api/token-saver/update/apply", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal memicu Watchtower.");
+      }
+
+      setTimeout(checkSystemOnline, 5000);
+    } catch (e) {
+      setUpdateStep("failed");
+      setUpdateError(e.message);
+    }
+  };
+
+  // Poll version endpoint until it returns 200 OK
+  const checkSystemOnline = async (retries = 30) => {
+    if (retries <= 0) {
+      setUpdateStep("failed");
+      setUpdateError("Sistem memakan waktu terlalu lama untuk restart. Silakan periksa status kontainer Anda secara manual.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/version", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setHasUpdate(!!data.hasUpdate);
+        setUpdateStep("complete");
+      } else {
+        setTimeout(() => checkSystemOnline(retries - 1), 3000);
+      }
+    } catch {
+      setTimeout(() => checkSystemOnline(retries - 1), 3000);
+    }
+  };
+
   // Fetch Dashboard statistics
   const fetchStats = async () => {
     setStatsLoading(true);
@@ -242,7 +356,17 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setGithubUsername(data.githubUsername || "kakrobi");
+          setGithubToken(data.githubToken || "");
           refreshHeadroomStatus();
+        }
+      } catch {}
+      
+      try {
+        const verRes = await fetch("/api/version");
+        if (verRes.ok) {
+          const verData = await verRes.json();
+          setHasUpdate(!!verData.hasUpdate);
         }
       } catch {}
     };
@@ -345,6 +469,22 @@ export default function TokenSaverClient() {
           </button>
         </div>
       </div>
+
+      {/* Update Notification Banner */}
+      {hasUpdate && (
+        <Card className="p-4 border border-primary/20 bg-primary/5 flex items-center justify-between flex-wrap gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary text-2xl">info</span>
+            <div>
+              <p className="font-semibold text-sm">Pembaruan Sistem Tersedia!</p>
+              <p className="text-xs text-text-muted">Versi baru 9Router telah dirilis di upstream resmi.</p>
+            </div>
+          </div>
+          <Button size="sm" onClick={() => handleStartUpdate()}>
+            Perbarui Sekarang
+          </Button>
+        </Card>
+      )}
 
       {/* Stats Loading State */}
       {statsLoading && !stats ? (
@@ -1072,6 +1212,42 @@ export default function TokenSaverClient() {
             />
           </div>
         </div>
+
+        {/* GitHub Credentials Section */}
+        <div className="pt-6 mt-6 border-t border-border">
+          <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm">key</span>
+            Auto-Update GitHub Configuration
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-text-muted">GitHub Username</label>
+              <Input
+                value={githubUsername}
+                onChange={(e) => {
+                  setGithubUsername(e.target.value);
+                  patchSetting({ githubUsername: e.target.value });
+                }}
+                placeholder="kakrobi"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-text-muted">Personal Access Token (PAT)</label>
+              <Input
+                type="password"
+                value={githubToken}
+                onChange={(e) => {
+                  setGithubToken(e.target.value);
+                  patchSetting({ githubToken: e.target.value });
+                }}
+                placeholder="ghp_xxxxxxxxxxxx"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-text-muted mt-2">
+            Dibutuhkan untuk melakukan sinkronisasi otomatis fork Anda dengan repositori resmi 9Router.
+          </p>
+        </div>
       </Card>
 
       {/* Headroom Install Setup Modal */}
@@ -1170,6 +1346,123 @@ export default function TokenSaverClient() {
               Done
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Auto-Update Modal */}
+      <Modal
+        isOpen={updateModalOpen}
+        title="Pembaruan Sistem Otomatis"
+        onClose={
+          updateStep === "syncing" || updateStep === "building" || updateStep === "applying"
+            ? undefined
+            : () => setUpdateModalOpen(false)
+        }
+      >
+        <div className="flex flex-col gap-4 py-2">
+          {/* Step 1: Syncing */}
+          {updateStep === "syncing" && (
+            <div className="flex flex-col items-center justify-center py-6 gap-4 text-center">
+              <span className="animate-spin material-symbols-outlined text-primary text-4xl">sync</span>
+              <div>
+                <p className="font-semibold text-sm">Menghubungkan ke GitHub...</p>
+                <p className="text-xs text-text-muted mt-1">Menggabungkan kode resmi ke repositori fork Anda.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Building */}
+          {updateStep === "building" && (
+            <div className="flex flex-col items-center justify-center py-6 gap-4 text-center">
+              <span className="animate-spin material-symbols-outlined text-primary text-4xl text-indigo-500">progress_activity</span>
+              <div className="w-full">
+                <p className="font-semibold text-sm">GitHub sedang mem-build sistem baru...</p>
+                <p className="text-xs text-text-muted mt-1">
+                  Kompilasi Docker image di GitHub Actions sedang berjalan.
+                </p>
+                <div className="bg-surface-2 border border-border rounded p-3 mt-4 text-left font-mono text-xs max-h-32 overflow-y-auto space-y-1">
+                  <p>• Status: {buildStatus?.status || "queued"}</p>
+                  <p>• Waktu berjalan: {buildTime}s</p>
+                  <p className="text-text-muted">• Estimasi total build: ~3 menit.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Apply Ready */}
+          {updateStep === "apply_ready" && (
+            <div className="flex flex-col gap-4 text-center py-4">
+              <div className="flex flex-col items-center gap-2">
+                <span className="material-symbols-outlined text-success text-5xl">check_circle</span>
+                <h4 className="font-bold text-base">Build Selesai & Siap Di-update!</h4>
+              </div>
+              <p className="text-xs text-text-muted">
+                Docker image terbaru telah siap di GitHub Container Registry. Klik tombol di bawah untuk menerapkannya di VPS.
+              </p>
+              <Button onClick={handleApplyUpdate} fullWidth variant="success">
+                Terapkan & Restart 9Router
+              </Button>
+            </div>
+          )}
+
+          {/* Step 4: Applying (Restarting) */}
+          {updateStep === "applying" && (
+            <div className="flex flex-col items-center justify-center py-6 gap-4 text-center">
+              <span className="animate-bounce material-symbols-outlined text-success text-4xl">cloud_download</span>
+              <div>
+                <p className="font-semibold text-sm">Sedang Menerapkan Update di VPS...</p>
+                <p className="text-xs text-text-muted mt-1">
+                  Watchtower sedang menarik image baru dan merekonstruksi kontainer 9Router Anda.
+                </p>
+                <p className="text-xs text-warning mt-3 font-medium animate-pulse">
+                  Proses ini memakan waktu ~10-15 detik. Sistem akan online kembali secara otomatis.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Complete */}
+          {updateStep === "complete" && (
+            <div className="flex flex-col gap-4 text-center py-4">
+              <div className="flex flex-col items-center gap-2">
+                <span className="material-symbols-outlined text-success text-5xl">celebration</span>
+                <h4 className="font-bold text-base">Sistem Berhasil Diperbarui!</h4>
+              </div>
+              <p className="text-xs text-text-muted">
+                9Router Anda telah diperbarui ke versi terbaru dan berjalan dengan mulus.
+              </p>
+              <Button
+                onClick={() => {
+                  setUpdateModalOpen(false);
+                  window.location.reload();
+                }}
+                fullWidth
+              >
+                Selesai
+              </Button>
+            </div>
+          )}
+
+          {/* Step 6: Failed */}
+          {updateStep === "failed" && (
+            <div className="flex flex-col gap-4 text-center py-4">
+              <div className="flex flex-col items-center gap-2">
+                <span className="material-symbols-outlined text-danger text-5xl">error</span>
+                <h4 className="font-bold text-base">Gagal Memperbarui Sistem</h4>
+              </div>
+              <p className="text-xs text-danger bg-danger/10 border border-danger/20 rounded p-3 font-medium text-left">
+                {updateError || "Terjadi kesalahan tidak diketahui."}
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={handleStartUpdate} variant="ghost" fullWidth>
+                  Coba Lagi
+                </Button>
+                <Button onClick={() => setUpdateModalOpen(false)} fullWidth>
+                  Tutup
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </div>
