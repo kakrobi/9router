@@ -976,58 +976,93 @@ export default function TokenSaverClient() {
                   <tr className="border-b border-border text-text-muted font-semibold">
                     <th className="py-2">Time</th>
                     <th className="py-2">Model</th>
-                    <th className="py-2">Active Optimizations</th>
-                    <th className="py-2 text-right">Prompt Savings</th>
-                    <th className="py-2 text-right">Completion Savings</th>
-                    <th className="py-2 text-right">Estimated Cost Saved</th>
+                    <th className="py-2 text-center">Total Input (Orig)</th>
+                    <th className="py-2 text-left">Prompt Savings</th>
+                    <th className="py-2 text-center">Total Output (Orig)</th>
+                    <th className="py-2 text-left">Completion Savings</th>
+                    <th className="py-2 text-right">Total Saved</th>
+                    <th className="py-2 text-right">Cost Saved</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {stats?.recentLogs?.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-4 text-center text-text-muted">No recent optimized requests.</td>
+                      <td colSpan={8} className="py-4 text-center text-text-muted">No recent optimized requests.</td>
                     </tr>
                   ) : (
                     stats?.recentLogs?.map((log, idx) => {
                       const date = new Date(log.timestamp);
                       const timeStr = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+                      
+                      const origPrompt = log.promptTokens + log.promptTokensSaved;
+                      const promptPct = origPrompt > 0 ? ((log.promptTokensSaved / origPrompt) * 100).toFixed(1) : "0.0";
+                      
+                      const origCompletion = log.completionTokens + log.completionTokensSaved;
+                      const completionPct = origCompletion > 0 ? ((log.completionTokensSaved / origCompletion) * 100).toFixed(1) : "0.0";
+                      
+                      const totalTokens = log.promptTokens + log.completionTokens;
+                      const totalSaved = log.promptTokensSaved + log.completionTokensSaved;
+                      const totalOrig = totalTokens + totalSaved;
+                      const totalPct = totalOrig > 0 ? ((totalSaved / totalOrig) * 100).toFixed(1) : "0.0";
+
+                      const hasRtk = log.activeModes.includes("RTK");
+                      const hasHeadroom = log.activeModes.includes("Headroom");
+                      const hasCaveman = log.activeModes.includes("Caveman");
+                      const hasPonytail = log.activeModes.includes("Ponytail");
+
                       return (
                         <tr key={idx} className="hover:bg-bg-hover">
                           <td className="py-2.5 text-text-muted">{timeStr}</td>
-                          <td className="py-2.5 font-medium">{log.model}</td>
                           <td className="py-2.5">
-                            <div className="flex gap-1.5 flex-wrap">
-                              {log.activeModes.length === 0 ? (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded font-medium border bg-zinc-900/40 text-zinc-400 border-zinc-800/30">
-                                  None
-                                </span>
-                              ) : (
-                                log.activeModes.map((mode, i) => (
-                                  <span
-                                    key={i}
-                                    className={`text-[9px] px-1.5 py-0.5 rounded font-medium border ${
-                                      mode === "RTK"
-                                        ? "bg-indigo-950/40 text-indigo-300 border-indigo-800/30"
-                                        : mode === "Headroom"
-                                          ? "bg-blue-950/40 text-blue-300 border-blue-800/30"
-                                          : mode === "Caveman"
-                                            ? "bg-purple-950/40 text-purple-300 border-purple-800/30"
-                                            : "bg-pink-950/40 text-pink-300 border-pink-800/30"
-                                    }`}
-                                  >
-                                    {mode}
-                                  </span>
-                                ))
-                              )}
-                            </div>
+                            <span className="font-medium block">{log.model}</span>
+                            <span className="text-[10px] text-text-muted font-normal">{log.provider}</span>
                           </td>
-                          <td className="py-2.5 text-right text-indigo-400">
-                            {log.promptTokensSaved > 0 ? `+${fmtTokens(log.promptTokensSaved)}` : "—"}
+                          <td className="py-2.5 text-center font-medium text-text-muted">
+                            {origPrompt > 0 ? fmtTokens(origPrompt) : "0"}
                           </td>
-                          <td className="py-2.5 text-right text-purple-400">
-                            {log.completionTokensSaved > 0 ? `+${fmtTokens(log.completionTokensSaved)}` : "—"}
+                          <td className="py-2.5">
+                            {log.promptTokensSaved > 0 ? (
+                              <div>
+                                <span className="font-semibold text-indigo-400">+{fmtTokens(log.promptTokensSaved)} ({promptPct}%)</span>
+                                <div className="flex gap-1.5 mt-0.5 text-[9px]">
+                                  {hasRtk && <span className="text-indigo-300 font-medium">🟢 RTK: +{fmtTokens(log.promptTokensSaved)}</span>}
+                                  {hasHeadroom && <span className="text-blue-300 font-medium">🟢 Headroom: +{fmtTokens(log.promptTokensSaved)}</span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
                           </td>
-                          <td className="py-2.5 text-right text-warning font-semibold">{fmtCost(log.costSaved)}</td>
+                          <td className="py-2.5 text-center font-medium text-text-muted">
+                            {origCompletion > 0 ? fmtTokens(origCompletion) : "0"}
+                          </td>
+                          <td className="py-2.5">
+                            {log.completionTokensSaved > 0 ? (
+                              <div>
+                                <span className="font-semibold text-purple-400">+{fmtTokens(log.completionTokensSaved)} ({completionPct}%)</span>
+                                <div className="flex gap-1.5 mt-0.5 text-[9px]">
+                                  {hasCaveman && (
+                                    <span className="text-purple-300 font-medium">
+                                      🟠 Caveman: +{fmtTokens(hasPonytail ? Math.round(log.completionTokensSaved * 0.6) : log.completionTokensSaved)}
+                                    </span>
+                                  )}
+                                  {hasPonytail && (
+                                    <span className="text-pink-300 font-medium">
+                                      🟠 Ponytail: +{fmtTokens(hasCaveman ? Math.round(log.completionTokensSaved * 0.4) : log.completionTokensSaved)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 text-right font-bold text-success">
+                            {totalSaved > 0 ? `+${fmtTokens(totalSaved)} (${totalPct}%)` : "—"}
+                          </td>
+                          <td className="py-2.5 text-right text-warning font-bold">
+                            {log.costSaved > 0 ? fmtCost(log.costSaved) : "—"}
+                          </td>
                         </tr>
                       );
                     })
