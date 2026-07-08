@@ -6,6 +6,7 @@ function createWatchtowerContainer() {
     const payload = JSON.stringify({
       Image: "containrrr/watchtower",
       Cmd: ["--run-once", "--cleanup", "9router-app"],
+      Env: ["DOCKER_API_VERSION=1.40"],
       HostConfig: {
         Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
         AutoRemove: true
