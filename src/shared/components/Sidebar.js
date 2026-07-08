@@ -61,9 +61,15 @@ export default function Sidebar({ onClose }) {
 
   // Lazy check for new npm version on mount
   useEffect(() => {
-    fetch("/api/version")
+    fetch("/api/version", { cache: "no-store" })
       .then(res => res.json())
-      .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+      .then(data => {
+        if (data.hasUpdate) {
+          setUpdateInfo(data);
+        } else {
+          setUpdateInfo(null);
+        }
+      })
       .catch(() => {});
   }, []);
 

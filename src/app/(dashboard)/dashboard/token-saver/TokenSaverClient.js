@@ -363,7 +363,7 @@ export default function TokenSaverClient() {
       } catch {}
       
       try {
-        const verRes = await fetch("/api/version");
+        const verRes = await fetch("/api/version", { cache: "no-store" });
         if (verRes.ok) {
           const verData = await verRes.json();
           setHasUpdate(!!verData.hasUpdate);
