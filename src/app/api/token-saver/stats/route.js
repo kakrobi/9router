@@ -200,16 +200,19 @@ export async function GET(request) {
       
       // Distribution & Mode Flags
       const activeModes = [];
-      if (promptMode === "rtk") {
+      const hasRtk = hasOptimizationsMeta ? !!opts.rtk : (promptMode === "rtk");
+      const hasHeadroom = hasOptimizationsMeta ? !!opts.headroom : (promptMode === "headroom");
+
+      if (hasRtk) {
         distribution.rtk.count++;
-        distribution.rtk.savedTokens += promptTokensSaved;
+        distribution.rtk.savedTokens += hasHeadroom ? Math.round(promptTokensSaved / 2) : promptTokensSaved;
         distribution.rtk.bytesBefore += origSize;
         distribution.rtk.bytesAfter += compSize;
         activeModes.push("RTK");
       }
-      if (promptMode === "headroom") {
+      if (hasHeadroom) {
         distribution.headroom.count++;
-        distribution.headroom.savedTokens += promptTokensSaved;
+        distribution.headroom.savedTokens += hasRtk ? Math.round(promptTokensSaved / 2) : promptTokensSaved;
         distribution.headroom.bytesBefore += origSize;
         distribution.headroom.bytesAfter += compSize;
         // Detect phantom saving: size shrank by less than 5%
